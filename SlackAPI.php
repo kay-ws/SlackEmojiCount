@@ -4,7 +4,6 @@ class SlackAPI
 {
   const API_BASE_URL = "https://slack.com/api/";
   //ACCESSトークンは環境変数SLACK_TOKENから読み込む
-  //const ACCESS_TOKEN = "xoxp-321232085875-1121363210787-1164660960513-41ae9bfbf54cf6f537a016bc387d487f";
   const TOKEN = "SLACK_TOKEN";
 
   const API_LIST_CHANNEL = "conversations.list";
