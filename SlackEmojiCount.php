@@ -14,12 +14,12 @@ class ArgParse
     $error_message = "Paramater: -c emoji-name -s YYYY-MM[-DD] [-e YYYY-MM[-DD]]";
     $this->_options = getopt("hs:e::c:");
 
+    echo $error_message . PHP_EOL;
+
     if(array_key_exists("h", $this->_options)) {
-      fputs(STDERR, $error_message);
       exit(1);
     }
     if($this->_options === false) {
-      fputs(STDERR, $error_message);
       exit(-1);
     }
 
@@ -51,10 +51,12 @@ class ArgParse
   }
 
   public function getStartDateTimestamp() {
+    //開始は0.000000マイクロ秒スタート
     return $this->_startDate->getTimestamp() . ".000000";
   }
 
   public function getEndDateTimestamp() {
+    //終了は0.999999マイクロ秒ストップ
     return $this->_endDate->getTimestamp() . ".999999";
   }
 
@@ -66,7 +68,7 @@ class ArgParse
 class SlackAPI
 {
   const API_BASE_URL = "https://slack.com/api/";
-  //ACCESSトークンは環境変数SLACK_TOKENから読み込む
+  //ACCESSトークンはシステム環境変数SLACK_TOKENから読み込む
   const TOKEN = "SLACK_TOKEN";
 
   const API_LIST_CHANNEL = "conversations.list";
@@ -79,7 +81,7 @@ class SlackAPI
     $responseJSON = file_get_contents($url);
     $objJSON = json_decode(urldecode($responseJSON));
     if ($objJSON->ok !== true) {
-      fputs(STDERR, "Fetch Error:" . $objJSON->error . "[" . $url . "]");
+      echo  "Fetch Error:" . $objJSON->error . "[" . $url . "]" . PHP_EOL;
       return [];
     }
     return $objJSON;
@@ -97,6 +99,7 @@ class SlackAPI
 
   public function __construct()
   {
+    //環境変数SLACK_TOKENからアクセストークン取得
     $this->accessToken = getenv(self::TOKEN);
     //var_dump($this->accessToken);
   }
@@ -119,7 +122,6 @@ class SlackAPI
 
   public function getMessageObjectByChannel($channel, $oldest, $latest)
   {
-//    var_dump(new DateTime("@" . $oldest), new DateTime("@" . $latest));
     $params = ["token" => $this->accessToken, "channel" => $channel, "oldest" => $oldest, "latest" => $latest];
     $url = self::API_BASE_URL . self::API_LIST_MESSAGE . $this->createParamString($params);
     $obj = $this->fetchUrl($url);
@@ -182,12 +184,12 @@ class MakeList
               property_exists($reaction, "name") &&
               property_exists($reaction, "count")
             ) {
-              //リアクション名その他を取得
+              //諸々のデータを取得
               $user = $message->user;
               $reactionName = $reaction->name;
-              $timeStamp = $message->ts;
               $count = $reaction->count;
-              $reactions[] = [$user, $reactionName, $timeStamp, $count];
+
+              $reactions[] = [$user, $reactionName, $count];
             }
           }
         }
@@ -221,23 +223,17 @@ foreach ($channelList as $channel => $_) {
 
 $reactionList = [];
 foreach ($messageObjects as $messageObject) {
-  $reactionList[] = $makeList->makeReactionList($messageObject);
+  $reactionList = array_merge(
+    $reactionList,//
+    $makeList->makeReactionList($messageObject)
+  );
 }
 //var_dump($reactionList);
 
-//配列のflat化
-$reactionList2 = [];
-foreach ($reactionList as $reactions) {
-  foreach ($reactions as $reaction) {
-    $reactionList2[] = $reaction;
-  }
-}
-//var_dump($reactionList2);
-
 //集計出来るように加工
 $reactionStats = [];
-foreach ($reactionList2 as $reaction) {
-  [$user, $reactionName, $date, $count] = $reaction;
+foreach ($reactionList as $reaction) {
+  [$user, $reactionName, $count] = $reaction;
   for ($i = 0; $i < $count; $i++) {
     if ($argParse->isAllEmoji() || $reactionName === $argParse->getEmoji()) {
       $reactionStat = $userList[$user] . "," . $reactionName;
@@ -250,11 +246,10 @@ foreach ($reactionList2 as $reaction) {
 $statAll = array_count_values($reactionStats);
 arsort($statAll);
 
-echo "START:" . date("Y-m-d H:i:s", $argParse->getStartDateTimestamp()) . PHP_EOL;
-echo "END  :" . date("Y-m-d H:i:s", $argParse->getEndDateTimestamp()) . PHP_EOL;
-echo "emoji :" . $argParse->getEmoji() . ":" . PHP_EOL;
+echo "START [" . date("Y-m-d H:i:s", $argParse->getStartDateTimestamp()) . "]" . PHP_EOL;
+echo "END   [" . date("Y-m-d H:i:s", $argParse->getEndDateTimestamp()) . "]". PHP_EOL;
+echo "emoji [:" . $argParse->getEmoji() . ":]" . PHP_EOL;
 //結果表示
-//print_r($statAll);
 foreach($statAll as $key => $value) {
   echo explode(",", $key)[0] . "," . $value . PHP_EOL;
 }
