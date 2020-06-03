@@ -104,35 +104,12 @@ class SlackAPI
     //var_dump($this->accessToken);
   }
 
-  public function getChannelObject()
+  public function getChannel()
   {
+    echo "get channel..." . PHP_EOL;
     $params = ["token" => $this->accessToken];
     $url = self::API_BASE_URL . self::API_LIST_CHANNEL . $this->createParamString($params);
     $obj = $this->fetchUrl($url);
-    return $obj;
-  }
-
-  public function getUserObject()
-  {
-    $params = ["token" => $this->accessToken];
-    $url = self::API_BASE_URL . self::API_LIST_USER . $this->createParamString($params);
-    $obj = $this->fetchUrl($url);
-    return $obj;
-  }
-
-  public function getMessageObjectByChannel($channel, $oldest, $latest)
-  {
-    $params = ["token" => $this->accessToken, "channel" => $channel, "oldest" => $oldest, "latest" => $latest];
-    $url = self::API_BASE_URL . self::API_LIST_MESSAGE . $this->createParamString($params);
-    $obj = $this->fetchUrl($url);
-    return $obj;
-  }
-}
-
-class MakeList
-{
-  public function makeChannelList($obj)
-  {
     $channelList = [];
     if (!property_exists($obj, "channels")) {
       return [];
@@ -145,12 +122,15 @@ class MakeList
         $channelList += [$channel->id => $channel->name];
       }
     }
-//    var_dump($channelList);
     return $channelList;
   }
 
-  public function makeUserList($obj)
+  public function getUser()
   {
+    echo "get user..." . PHP_EOL;
+    $params = ["token" => $this->accessToken];
+    $url = self::API_BASE_URL . self::API_LIST_USER . $this->createParamString($params);
+    $obj = $this->fetchUrl($url);
     $userList = [];
     foreach ($obj->members as $user) {
       if (
@@ -160,23 +140,25 @@ class MakeList
         $name = ($user->profile->display_name !== "")
           ? $user->profile->display_name
           : $user->profile->real_name;
-        //var_dump($user->id, $name);
         $userList += [$user->id => $name];
       }
     }
-//    var_dump($userList);
     return $userList;
   }
 
-  public function makeReactionList($obj)
+  public function getMessageByChannel($channel, $oldest, $latest)
   {
+    echo "get message by channel..." . $channel . PHP_EOL;
+
+    $params = ["token" => $this->accessToken, "channel" => $channel, "oldest" => $oldest, "latest" => $latest];
+    $url = self::API_BASE_URL . self::API_LIST_MESSAGE . $this->createParamString($params);
+    $obj = $this->fetchUrl($url);
     $reactions = [];
     if (property_exists($obj, "messages")) {
       foreach ($obj->messages as $message) {
         if (
           property_exists($message, "user") &&
-          property_exists($message, "reactions") &&
-          property_exists($message, "ts")
+          property_exists($message, "reactions")
         ) {
           foreach ($message->reactions as $reaction) {
             //リアクションプロパティがある場合
@@ -199,43 +181,30 @@ class MakeList
   }
 }
 
+
 $argParse = new ArgParse();
 $slackAPI = new SlackAPI();
-$makeList = new MakeList();
 
-$userObject = $slackAPI->getUserObject();
-$userList = $makeList->makeUserList($userObject);
+$userList = $slackAPI->getUser();
 
-$channelObject = $slackAPI->getChannelObject();
-$channelList = $makeList->makeChannelList($channelObject);
+$channelList = $slackAPI->getChannel();
 
-$messageObjects = [];
+$reactions = [];
 foreach ($channelList as $channel => $_) {
-  $messageObject = $slackAPI->getMessageObjectByChannel(
+  $messageList = $slackAPI->getMessageByChannel(
     $channel,
     $argParse->getStartDateTimestamp(),
     $argParse->getEndDateTimestamp()
   );
-  $messageObjects[] = $messageObject;
-  //sleep(1);
+  $reactions = array_merge($reactions, $messageList);
 }
-//var_dump($messageObjects);
-
-$reactionList = [];
-foreach ($messageObjects as $messageObject) {
-  $reactionList = array_merge(
-    $reactionList,//
-    $makeList->makeReactionList($messageObject)
-  );
-}
-//var_dump($reactionList);
 
 //集計出来るように加工
 $reactionStats = [];
-foreach ($reactionList as $reaction) {
+foreach ($reactions as $reaction) {
   [$user, $reactionName, $count] = $reaction;
-  for ($i = 0; $i < $count; $i++) {
-    if ($argParse->isAllEmoji() || $reactionName === $argParse->getEmoji()) {
+  if ($argParse->isAllEmoji() || $reactionName === $argParse->getEmoji()) {
+    for ($i = 0; $i < $count; $i++) {
       $reactionStat = $userList[$user] . "," . $reactionName;
       $reactionStats[] = $reactionStat;
     }
@@ -244,11 +213,14 @@ foreach ($reactionList as $reaction) {
 
 //集計
 $statAll = array_count_values($reactionStats);
+
+//$key -> $value の $valueで逆順ソート
 arsort($statAll);
 
 echo "START [" . date("Y-m-d H:i:s", $argParse->getStartDateTimestamp()) . "]" . PHP_EOL;
 echo "END   [" . date("Y-m-d H:i:s", $argParse->getEndDateTimestamp()) . "]". PHP_EOL;
 echo "emoji [:" . $argParse->getEmoji() . ":]" . PHP_EOL;
+
 //結果表示
 foreach($statAll as $key => $value) {
   echo explode(",", $key)[0] . "," . $value . PHP_EOL;
