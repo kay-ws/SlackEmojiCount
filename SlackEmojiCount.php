@@ -12,20 +12,30 @@ class ArgParse
   public function __construct()
   {
     $error_message = "Paramater: -c emoji-name -s YYYY-MM[-DD] [-e YYYY-MM[-DD]]";
-    $this->_options = getopt("hs:e::c:");
+    $this->_options = getopt("hs:e:c:");
 
     echo $error_message . PHP_EOL;
 
-    if(array_key_exists("h", $this->_options)) {
-      exit(1);
-    }
-    if($this->_options === false) {
+    if ($this->_options === false) {
+      echo "ArgParse:Parse Error";
       exit(-1);
     }
 
+    if (array_key_exists("h", $this->_options)) {
+      exit(0);
+    }
+
+    if (!array_key_exists("s", $this->_options)) {
+      echo "ArgParse:-s does't set";
+      exit(-2);
+    }
     $this->_startDate = new DateTime($this->_options["s"]);
 
-    if(array_key_exists("e", $this->_options)) {
+    if (array_key_exists("e", $this->_options)) {
+      if ($this->_options["s"] > $this->_options["e"]) {
+        echo "ArgParse: -e must be bigger then -s";
+        exit(-3);
+      }
       $this->_endDate = new DateTime($this->_options["e"]);
       $this->_endDate
         ->add(new DateInterval('P1D'))
@@ -37,7 +47,7 @@ class ArgParse
         ->sub(new DateInterval('PT1S'));
     }
 
-    if(array_key_exists("c", $this->_options)) {
+    if (array_key_exists("c", $this->_options)) {
       $this->_emojiMark = $this->_options["c"];
       $this->_all = false;
     } else {
@@ -46,21 +56,25 @@ class ArgParse
     }
   }
 
-  public function getEmoji() {
+  public function getEmoji()
+  {
     return $this->_emojiMark;
   }
 
-  public function getStartDateTimestamp() {
+  public function getStartDateTimestamp()
+  {
     //開始は0.000000マイクロ秒スタート
     return $this->_startDate->getTimestamp() . ".000000";
   }
 
-  public function getEndDateTimestamp() {
+  public function getEndDateTimestamp()
+  {
     //終了は0.999999マイクロ秒ストップ
     return $this->_endDate->getTimestamp() . ".999999";
   }
 
-  public function isAllEmoji() {
+  public function isAllEmoji()
+  {
     return $this->_all;
   }
 }
@@ -106,7 +120,7 @@ class SlackAPI
 
   public function getChannel()
   {
-    echo "get channel..." . PHP_EOL;
+    echo "get channels..." . PHP_EOL;
     $params = ["token" => $this->accessToken];
     $url = self::API_BASE_URL . self::API_LIST_CHANNEL . $this->createParamString($params);
     $obj = $this->fetchUrl($url);
@@ -127,7 +141,7 @@ class SlackAPI
 
   public function getUser()
   {
-    echo "get user..." . PHP_EOL;
+    echo "get users..." . PHP_EOL;
     $params = ["token" => $this->accessToken];
     $url = self::API_BASE_URL . self::API_LIST_USER . $this->createParamString($params);
     $obj = $this->fetchUrl($url);
@@ -146,11 +160,11 @@ class SlackAPI
     return $userList;
   }
 
-  public function getMessageByChannel($channel, $oldest, $latest)
+  public function getMessageByChannel($key, $value, $oldest, $latest)
   {
-    echo "get message by channel..." . $channel . PHP_EOL;
+    echo "get messages by channel..." . $value . PHP_EOL;
 
-    $params = ["token" => $this->accessToken, "channel" => $channel, "oldest" => $oldest, "latest" => $latest];
+    $params = ["token" => $this->accessToken, "channel" => $key, "oldest" => $oldest, "latest" => $latest];
     $url = self::API_BASE_URL . self::API_LIST_MESSAGE . $this->createParamString($params);
     $obj = $this->fetchUrl($url);
     $reactions = [];
@@ -166,7 +180,7 @@ class SlackAPI
               property_exists($reaction, "name") &&
               property_exists($reaction, "count")
             ) {
-              //諸々のデータを取得
+              //投稿者名、リアクション名（スタンプ名）、件数を取得
               $user = $message->user;
               $reactionName = $reaction->name;
               $count = $reaction->count;
@@ -190,9 +204,10 @@ $userList = $slackAPI->getUser();
 $channelList = $slackAPI->getChannel();
 
 $reactions = [];
-foreach ($channelList as $channel => $_) {
+foreach ($channelList as $key => $value) {
   $messageList = $slackAPI->getMessageByChannel(
-    $channel,
+    $key,
+    $value,
     $argParse->getStartDateTimestamp(),
     $argParse->getEndDateTimestamp()
   );
@@ -214,15 +229,21 @@ foreach ($reactions as $reaction) {
 //集計
 $statAll = array_count_values($reactionStats);
 
-//$key -> $value の $valueで逆順ソート
+//ソート
 arsort($statAll);
 
 echo "START [" . date("Y-m-d H:i:s", $argParse->getStartDateTimestamp()) . "]" . PHP_EOL;
-echo "END   [" . date("Y-m-d H:i:s", $argParse->getEndDateTimestamp()) . "]". PHP_EOL;
+echo "END   [" . date("Y-m-d H:i:s", $argParse->getEndDateTimestamp()) . "]" . PHP_EOL;
 echo "emoji [:" . $argParse->getEmoji() . ":]" . PHP_EOL;
 
 //結果表示
-foreach($statAll as $key => $value) {
-  echo explode(",", $key)[0] . "," . $value . PHP_EOL;
+if ($argParse->isAllEmoji()) {
+  foreach ($statAll as $key => $value) {
+    echo $key . "," . $value . PHP_EOL;
+  }
+} else {
+  foreach ($statAll as $key => $value) {
+    echo explode(",", $key)[0] . "," . $value . PHP_EOL;
+  }
 }
 exit(0);
